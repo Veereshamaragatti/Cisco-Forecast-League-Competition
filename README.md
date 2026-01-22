@@ -126,6 +126,142 @@ The final score uses **Cost-Weighted Accuracy**:
 4. Avoid systematic bias (over/under forecasting)
 5. Benchmark against provided team forecasts
 
+## Models Used in This Repository
+
+The Jupyter notebooks in the `Cisco0/` and `Cisco1/` folders contain implementations of various forecasting models:
+
+### 1. SARIMA/ARIMA (Seasonal AutoRegressive Integrated Moving Average)
+**Why Used**: ARIMA models are well-suited for time series data with trends and seasonality, which is common in quarterly sales data.
+
+```python
+sarima_model = sm.tsa.statespace.SARIMAX(
+    product_data["Sales"], 
+    order=(1, 1, 1), 
+    seasonal_order=(1, 1, 1, 4),  # Quarterly seasonality (4 periods)
+    enforce_stationarity=False, 
+    enforce_invertibility=False
+).fit()
+```
+
+**Strengths**:
+- Captures quarterly seasonality patterns
+- Works well with limited historical data
+- Handles trends effectively
+
+**Performance**: Used as a baseline model and for products with clear seasonal patterns.
+
+### 2. XGBoost (Extreme Gradient Boosting)
+**Why Used**: XGBoost excels at capturing complex non-linear relationships and can incorporate multiple features including team forecasts and historical data.
+
+```python
+xgb_model = XGBRegressor(
+    objective="reg:squarederror", 
+    n_estimators=100, 
+    learning_rate=0.1, 
+    random_state=42
+)
+```
+
+**Strengths**:
+- Can use multiple features (past sales, team forecasts, trends)
+- Handles non-linear patterns
+- Robust to outliers
+
+**Performance**: Generally provides good accuracy when combined with feature engineering (rolling means, time indices).
+
+### 3. Holt-Winters Exponential Smoothing
+**Why Used**: Excellent for data with both trend and seasonal components, which is typical for product demand forecasting.
+
+```python
+model = ExponentialSmoothing(
+    filled_series, 
+    trend='add',
+    seasonal='add', 
+    seasonal_periods=4
+).fit()
+```
+
+**Strengths**:
+- Automatically handles trend and seasonality
+- Good for short-term forecasts
+- Simple to implement
+
+### 4. Prophet (Facebook's Forecasting Library)
+**Why Used**: Prophet is designed for business time series with strong seasonal effects and multiple seasons of historical data.
+
+**Strengths**:
+- Handles missing data well
+- Robust to outliers and shifts in trends
+- Easy to tune with domain knowledge
+
+### 5. Simple & Weighted Moving Averages
+**Why Used**: Provides stable baseline forecasts, especially for products with limited data or erratic patterns.
+
+```python
+# Simple Moving Average (last 4 quarters)
+ma_forecast = np.mean(valid_values[-4:])
+
+# Weighted Moving Average (higher weight to recent quarters)
+weights = np.array([0.1, 0.2, 0.3, 0.4])
+wma_forecast = np.sum(weights * valid_values[-4:]) / np.sum(weights)
+```
+
+### 6. Linear Regression
+**Why Used**: For products with clear linear trends, simple regression can be effective.
+
+### 7. SVR (Support Vector Regression)
+**Why Used**: SVR can capture non-linear relationships while being robust to outliers.
+
+---
+
+## Model Comparison & Accuracy Analysis
+
+The notebooks compare model performance using metrics like:
+- **MAE (Mean Absolute Error)**
+- **RMSE (Root Mean Square Error)**
+
+### Which Model Gave More Accuracy?
+
+Based on the code analysis, the repository uses a **Hybrid Ensemble Approach** that combines multiple models:
+
+| Model | Best For | Typical Accuracy |
+|-------|----------|------------------|
+| **SARIMA** | Products with clear seasonality | Good for baseline |
+| **XGBoost** | Products with complex patterns | Often best performer |
+| **Holt-Winters** | Sustaining products | Competitive accuracy |
+| **Hybrid** | Overall | Best combined accuracy |
+
+**Key Findings**:
+
+1. **XGBoost tends to perform best** when combined with trend features (time index, rolling means) because it can capture complex relationships between multiple features including the internal team forecasts.
+
+2. **SARIMA excels for products with clear quarterly seasonality** but may struggle with products that have erratic demand patterns.
+
+3. **The Hybrid approach** (combining ARIMA + XGBoost predictions) often achieves the lowest RMSE by leveraging the strengths of both statistical and ML methods:
+   ```python
+   hybrid_pred = 0.5 * arima_forecast + 0.5 * xgb_forecast
+   ```
+
+4. **Product Life Cycle matters**: The code applies different model weights based on product stage:
+   - **Sustaining products**: Higher weight on Moving Averages (more stable)
+   - **Declining products**: Higher weight on Year-over-Year trends (captures decline)
+   - **New products**: Higher weight on Holt-Winters/Exponential Smoothing
+
+### Best Team Selection Logic
+The notebooks also implement logic to select the best-performing internal team (D=Demand Planning, M=Marketing, S=Statistical/ML) based on historical bias:
+
+```python
+for team in ['D', 'M', 'S']:
+    team_errors = np.mean([abs(row[f"{team}_FY2024_Q3_BIAS"]), 
+                           abs(row[f"{team}_FY2024_Q4_BIAS"]), 
+                           abs(row[f"{team}_FY2025_Q1_BIAS"])])
+best_team = min(team_errors, key=team_errors.get)
+```
+
+This allows using the most accurate team's forecast for each product when team benchmarks are available.
+
+---
+
 ## File Structure
 
 ```
@@ -134,8 +270,13 @@ Cisco-Forecast-League-Competition/
 ├── Cisco Forecast League Data Pack - Phase 2(Data Pack).csv    # Historical data & benchmarks
 ├── Accuracy Results Calculation CFL India(AccuracyCalculation).csv  # Scoring template
 ├── Methedology.pptx                                             # Competition methodology (note: filename typo)
-├── Cisco0/                                                      # Additional resources folder
-└── Cisco1/                                                      # Additional resources folder
+├── Cisco0/Cisco/                                                # Jupyter notebooks with model implementations
+│   ├── cisco.ipynb                                              # Holt-Winters, Moving Average, YoY models
+│   ├── cis.ipynb                                                # SARIMA, XGBoost, Prophet, Hybrid models
+│   ├── Untitled.ipynb - Untitled2.ipynb                         # Additional experiments
+└── Cisco1/Cisco1/                                               # Additional model implementations
+    ├── cis.ipynb                                                # SARIMA implementation
+    └── Untitled1.ipynb                                          # Team accuracy analysis
 ```
 
 ## Getting Started
